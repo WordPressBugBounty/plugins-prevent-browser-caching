@@ -2,7 +2,9 @@
 /**
  * Plugin Name: Prevent Browser Caching
  * Description: Updates the assets version of all CSS and JS files. Shows the latest changes on the site without asking the client to clear browser cache.
- * Version: 2.3.6
+ * Version: 2.3.7
+ * Requires at least: 4.0
+ * Requires PHP: 5.6
  * Author: Kostya Tereshchuk
  * Author URI: https://tutori.org/kostya/
  * License: GPLv2 or later

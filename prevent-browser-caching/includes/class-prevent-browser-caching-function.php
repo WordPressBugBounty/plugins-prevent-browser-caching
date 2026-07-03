@@ -60,12 +60,88 @@ class Prevent_Browser_Caching_Function
     public function add_query_arg( $src )
     {
         if ( $this->assets_version ) {
-            $src = add_query_arg( 'ver', $this->assets_version, $src );
+            $src = $this->set_ver_query_arg( $src, $this->assets_version );
         } else {
-            $src = remove_query_arg( 'ver', $src );
+            $src = $this->remove_ver_query_arg( $src );
         }
 
         return $src;
+    }
+
+    /**
+     * Sets the "ver" query param, keeping the rest of the URL untouched.
+     * Parsing and rebuilding the query string (e.g. with add_query_arg) would collapse
+     * repeated params, such as the "family" params in a Google Fonts URL.
+     *
+     * @param string $src
+     * @param string $ver
+     * @return string
+     */
+    public function set_ver_query_arg( $src, $ver )
+    {
+        $ver = urlencode( $ver );
+
+        $fragment = '';
+
+        if ( false !== ( $fragment_pos = strpos( $src, '#' ) ) ) {
+            $fragment = substr( $src, $fragment_pos );
+            $src = substr( $src, 0, $fragment_pos );
+        }
+
+        $src_parts = explode( '?', $src, 2 );
+
+        if ( ! isset( $src_parts[1] ) || $src_parts[1] === '' ) {
+            return $src_parts[0] . '?ver=' . $ver . $fragment;
+        }
+
+        $pairs = explode( '&', $src_parts[1] );
+        $found = false;
+
+        foreach ( $pairs as $i => $pair ) {
+            if ( 'ver' === $pair || 0 === strpos( $pair, 'ver=' ) ) {
+                $pairs[ $i ] = 'ver=' . $ver;
+                $found = true;
+                break;
+            }
+        }
+
+        if ( ! $found ) {
+            $pairs[] = 'ver=' . $ver;
+        }
+
+        return $src_parts[0] . '?' . implode( '&', $pairs ) . $fragment;
+    }
+
+    /**
+     * Removes the "ver" query param, keeping the rest of the URL untouched.
+     *
+     * @param string $src
+     * @return string
+     */
+    public function remove_ver_query_arg( $src )
+    {
+        $fragment = '';
+
+        if ( false !== ( $fragment_pos = strpos( $src, '#' ) ) ) {
+            $fragment = substr( $src, $fragment_pos );
+            $src = substr( $src, 0, $fragment_pos );
+        }
+
+        $src_parts = explode( '?', $src, 2 );
+
+        if ( ! isset( $src_parts[1] ) ) {
+            return $src . $fragment;
+        }
+
+        $pairs = array();
+
+        foreach ( explode( '&', $src_parts[1] ) as $pair ) {
+            if ( 'ver' !== $pair && 0 !== strpos( $pair, 'ver=' ) ) {
+                $pairs[] = $pair;
+            }
+        }
+
+        return $src_parts[0] . ( $pairs ? '?' . implode( '&', $pairs ) : '' ) . $fragment;
     }
 
 }

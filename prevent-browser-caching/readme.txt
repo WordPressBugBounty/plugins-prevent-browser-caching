@@ -1,8 +1,9 @@
 === Prevent Browser Caching ===
 Tags: browser cache, clear, assets, frontend, development
 Requires at least: 4.0
-Tested up to: 6.9
-Stable tag: 2.3.6
+Tested up to: 7.0
+Requires PHP: 5.6
+Stable tag: 2.3.7
 Donate link: https://tutori.org/donate/
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -50,6 +51,11 @@ Just insert this code in functions.php file of your theme and change the value o
 3. Activate Prevent Browser Caching on your Plugins page.
 
 == Changelog ==
+
+= 2.3.7 =
+* Fixed a bug with URLs that contain repeated query params: only the last one survived after adding the "ver" param. For example, Google Fonts URLs with several "family" params lost all font families except the last one.
+* Tested the plugin in WordPress 7.0.
+* Declared the minimum required PHP version (5.6).
 
 = 2.3.6 =
 * Tested the plugin in WordPress 6.9.

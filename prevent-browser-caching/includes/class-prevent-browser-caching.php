@@ -192,24 +192,52 @@ class Prevent_Browser_Caching
     public function add_query_arg( $src )
     {
         if ( $time = $this->time_query_arg ) {
-            $url_parts = parse_url( $src );
-
-            $query = array();
-
-            if ( isset( $url_parts['query'] ) ) {
-                parse_str( $url_parts['query'], $query );
-            }
-
-            if ( isset( $query['ver'] ) ) {
-                $ver = $query['ver'] . '.' . $time;
-            } else {
-                $ver = $time;
-            }
-
-            $src = add_query_arg( 'ver', $ver, $src );
+            $src = $this->append_time_to_ver( $src, $time );
         }
 
         return $src;
+    }
+
+    /**
+     * Appends the time to the "ver" query param, keeping the rest of the URL untouched.
+     * Parsing and rebuilding the query string (e.g. with add_query_arg) would collapse
+     * repeated params, such as the "family" params in a Google Fonts URL.
+     *
+     * @param string $src
+     * @param int|string $time
+     * @return string
+     */
+    public function append_time_to_ver( $src, $time )
+    {
+        $fragment = '';
+
+        if ( false !== ( $fragment_pos = strpos( $src, '#' ) ) ) {
+            $fragment = substr( $src, $fragment_pos );
+            $src = substr( $src, 0, $fragment_pos );
+        }
+
+        $src_parts = explode( '?', $src, 2 );
+
+        if ( ! isset( $src_parts[1] ) || $src_parts[1] === '' ) {
+            return $src_parts[0] . '?ver=' . $time . $fragment;
+        }
+
+        $pairs = explode( '&', $src_parts[1] );
+        $found = false;
+
+        foreach ( $pairs as $i => $pair ) {
+            if ( 'ver' === $pair || 0 === strpos( $pair, 'ver=' ) ) {
+                $pairs[ $i ] = ( 'ver' === $pair ? 'ver=' : $pair ) . '.' . $time;
+                $found = true;
+                break;
+            }
+        }
+
+        if ( ! $found ) {
+            $pairs[] = 'ver=' . $time;
+        }
+
+        return $src_parts[0] . '?' . implode( '&', $pairs ) . $fragment;
     }
 
     /**
