@@ -1,0 +1,191 @@
+# Copyright (C) 2026 Kostya Tereshchuk
+# This file is distributed under the GPLv2 or later.
+msgid ""
+msgstr ""
+"Project-Id-Version: Prevent Browser Caching 3.0.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/prevent-browser-caching\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-07-03T00:00:00+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: make-pot.php\n"
+"X-Domain: prevent-browser-caching\n"
+
+#. translators: %s: page cache plugin name.
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:152
+msgid "%s is active, so page caching headers are left to it and the \"Pages (HTML)\" option currently has no effect."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:213
+msgid "Advanced"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:217
+msgid "Also version external URLs (CDN, third-party scripts)"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:224
+msgid "Also version styles & scripts in the admin area (wp-admin)"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:170
+msgid "Automatically, when a file changes — recommended"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:172
+msgid "Browser caching keeps working at full strength; files are re-downloaded only after they really change."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:147
+msgid "Browsers check for a newer version of the page before showing a cached one. Fixes \"I still see the old page on my phone\" without disabling caching."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:108
+msgid "Enable recommended settings"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:182
+msgid "Every"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:207
+msgid "Exclusions"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:240
+msgid "Forces every visitor to fetch fresh copies of the CSS/JS files and images selected above on their next page view."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:139
+msgid "Images"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:129
+msgid "Keep fresh:"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:109
+msgid "Keep my current settings"
+msgstr ""
+
+#. translators: %s: human-readable time difference, e.g. "2 hours".
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:245
+msgid "Last manual update: %s ago."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:283
+msgid "Last manual update: just now."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:235
+msgid "Manual update:"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:356
+msgid "NOTE: The assets version of CSS and JS files is set programmatically by your theme or plugin, so the settings above are disabled. It uses this code:"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:104
+msgid "New in 3.0: smarter cache busting."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:161
+msgid "Nothing is selected — the plugin currently does nothing."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:219
+msgid "Off is safer: some external services (payment scripts in particular) reject URLs with an unexpected \"ver\" parameter."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:176
+msgid "On every page load (development mode; styles & scripts only)"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:208
+msgid "One per line: a part of a URL or an exact script/style handle. Matching styles, scripts and images are never versioned."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:190
+msgid "Only manually — with the \"Update versions\" button"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:145
+msgid "Pages (HTML)"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:302
+msgid "Please wait…"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:31
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:32
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:89
+msgid "Prevent Browser Caching"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:117
+msgid "Recommended settings are active."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:118
+msgid "Restore my previous settings"
+msgstr ""
+
+#: prevent-browser-caching.php:29
+msgid "Settings"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:196
+msgid "Show the \"Update versions\" button on the toolbar"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:286
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:309
+msgid "Something went wrong — please reload the page and try again."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:133
+msgid "Styles & scripts (CSS, JS)"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:201
+msgid "The toolbar button is disabled, so nothing will ever update the versions. Enable the toolbar button above, or use the \"Update versions now\" button on this page."
+msgstr ""
+
+#: includes/class-prevent-browser-caching.php:868
+msgid "Update versions"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:237
+msgid "Update versions now"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:277
+msgid "Updating…"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:135
+msgid "Visitors get the current files instead of cached ones, thanks to the \"ver\" URL parameter."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:141
+msgid "When a file in the Media Library is edited or replaced, visitors get the new image instead of a cached one."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:166
+msgid "When to update:"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:105
+msgid "Your current settings still work exactly as before. The recommended setup updates the version only when a file really changes (browser caching keeps working), stops touching external URLs (payment scripts, CDNs), and adds image cache busting."
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:184
+msgid "minutes (legacy)"
+msgstr ""
+
+#: includes/admin/class-prevent-browser-caching-admin-settings.php:282
+msgid "✓ Done — visitors will get the fresh files."
+msgstr ""
+

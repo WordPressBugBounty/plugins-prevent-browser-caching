@@ -1,5 +1,10 @@
 <?php
 
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
+
 class Prevent_Browser_Caching_Function
 {
     /**

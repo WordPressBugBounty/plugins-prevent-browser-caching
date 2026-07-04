@@ -1,10 +1,10 @@
 <?php
 /**
  * Plugin Name: Prevent Browser Caching
- * Description: Updates the assets version of all CSS and JS files. Shows the latest changes on the site without asking the client to clear browser cache.
- * Version: 2.3.7
- * Requires at least: 4.0
- * Requires PHP: 5.6
+ * Description: Prevents browser cache problems: visitors always get the current version of your CSS, JS, images and pages, while caching keeps working.
+ * Version: 3.0.0
+ * Requires at least: 4.7
+ * Requires PHP: 7.2
  * Author: Kostya Tereshchuk
  * Author URI: https://tutori.org/kostya/
  * License: GPLv2 or later
@@ -26,7 +26,7 @@ if ( ! function_exists( 'prevent_browser_caching_plugin_actions' ) ) {
      */
     function prevent_browser_caching_plugin_actions( $actions )
     {
-        array_unshift( $actions, "<a href=\"" . menu_page_url( 'prevent-browser-caching', false ) . "\">" . esc_html__( "Settings" ) . "</a>" );
+        array_unshift( $actions, "<a href=\"" . esc_url( menu_page_url( 'prevent-browser-caching', false ) ) . "\">" . esc_html__( "Settings", "prevent-browser-caching" ) . "</a>" );
         return $actions;
     }
     add_filter( 'plugin_action_links_' . plugin_basename(__FILE__), 'prevent_browser_caching_plugin_actions', 10, 1 );
@@ -71,6 +71,48 @@ if ( ! function_exists( 'maybe_load_class_prevent_browser_caching' ) ) {
     }
 
     add_action( 'after_setup_theme', 'maybe_load_class_prevent_browser_caching' );
+}
+
+if ( ! function_exists( 'prevent_browser_caching_activate' ) ) {
+    /**
+     * On activation: store the recommended defaults for fresh installs (an existing
+     * option is never overwritten) and remember to open the settings page.
+     */
+    function prevent_browser_caching_activate( $network_wide = false )
+    {
+        if ( ! class_exists( 'Prevent_Browser_Caching' ) ) {
+            include_once dirname( __FILE__ ) . '/includes/class-prevent-browser-caching.php';
+        }
+
+        add_option( 'prevent_browser_caching_options', Prevent_Browser_Caching::get_fresh_defaults() );
+
+        if ( ! $network_wide ) {
+            set_transient( 'pbc_activation_redirect', 1, MINUTE_IN_SECONDS );
+        }
+    }
+    register_activation_hook( __FILE__, 'prevent_browser_caching_activate' );
+}
+
+if ( ! function_exists( 'prevent_browser_caching_activation_redirect' ) ) {
+    /**
+     * Open the settings page right after a single-plugin activation.
+     */
+    function prevent_browser_caching_activation_redirect()
+    {
+        if ( ! get_transient( 'pbc_activation_redirect' ) ) {
+            return;
+        }
+
+        delete_transient( 'pbc_activation_redirect' );
+
+        if ( isset( $_GET['activate-multi'] ) || wp_doing_ajax() || ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+
+        wp_safe_redirect( admin_url( 'options-general.php?page=prevent-browser-caching' ) );
+        exit;
+    }
+    add_action( 'admin_init', 'prevent_browser_caching_activation_redirect' );
 }
 
 if ( is_admin() ) {
