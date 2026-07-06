@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Prevent Browser Caching
  * Description: Prevents browser cache problems: visitors always get the current version of your CSS, JS, images and pages, while caching keeps working.
- * Version: 3.0.0
+ * Version: 3.1.0
  * Requires at least: 4.7
  * Requires PHP: 7.2
  * Author: Kostya Tereshchuk
@@ -16,6 +16,32 @@
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
+}
+
+if ( ! defined( 'PREVENT_BROWSER_CACHING_VERSION' ) ) {
+    define( 'PREVENT_BROWSER_CACHING_VERSION', '3.1.0' );
+}
+
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    include_once dirname( __FILE__ ) . '/includes/class-prevent-browser-caching-cli.php';
+}
+
+add_action( 'wp_abilities_api_init', 'prevent_browser_caching_register_abilities' );
+
+if ( ! function_exists( 'prevent_browser_caching_register_abilities' ) ) {
+    /**
+     * Register the plugin's abilities (no-op on WordPress without the Abilities API).
+     */
+    function prevent_browser_caching_register_abilities()
+    {
+        if ( ! function_exists( 'wp_register_ability' ) ) {
+            return;
+        }
+
+        include_once dirname( __FILE__ ) . '/includes/class-prevent-browser-caching-abilities.php';
+
+        Prevent_Browser_Caching_Abilities::register();
+    }
 }
 
 if ( ! function_exists( 'prevent_browser_caching_plugin_actions' ) ) {

@@ -197,6 +197,24 @@ class Prevent_Browser_Caching_Admin_Settings
                             </label>
                         </p>
 
+                        <?php if ( $page_cache_plugin ): ?>
+                            <p class="pbc-purge-option">
+                                <label>
+                                    <input type="checkbox" name="prevent_browser_caching_options[purge_page_cache]" value="1"<?php checked( $options['purge_page_cache'] ); ?> />
+                                    <?php
+                                    echo esc_html( sprintf(
+                                        /* translators: %s: page cache plugin name. */
+                                        __( 'Also clear the %s page cache when versions are updated', 'prevent-browser-caching' ),
+                                        $page_cache_plugin
+                                    ) );
+                                    ?>
+                                </label>
+                                <span class="description pbc-indent" style="display: block;"><?php esc_html_e( 'The page cache stores HTML that still references old file versions. Clearing it together with the version update means every visitor sees the new site immediately.', 'prevent-browser-caching' ); ?></span>
+                            </p>
+                        <?php else: ?>
+                            <input type="hidden" name="prevent_browser_caching_options[purge_page_cache]" value="<?php echo $options['purge_page_cache'] ? '1' : '0'; ?>" />
+                        <?php endif; ?>
+
                         <p class="pbc-manual-warning" style="display: none; color: #b32d2e;">
                             <?php esc_html_e( 'The toolbar button is disabled, so nothing will ever update the versions. Enable the toolbar button above, or use the "Update versions now" button on this page.', 'prevent-browser-caching' ); ?>
                         </p>
@@ -237,6 +255,7 @@ class Prevent_Browser_Caching_Admin_Settings
                         <button type="button" class="button" onclick="pbc_update_clear_cache_time(this)"><?php esc_html_e( 'Update versions now', 'prevent-browser-caching' ); ?></button>
                         <span class="pbc-update-feedback" style="display: none; margin-left: 8px; font-weight: 600;"></span>
                     </p>
+                    <p class="pbc-update-feedback-note" style="display: none; margin: 0.2em 0 0.6em; font-weight: 600;"></p>
                     <p class="description"><?php esc_html_e( 'Forces every visitor to fetch fresh copies of the CSS/JS files and images selected above on their next page view.', 'prevent-browser-caching' ); ?></p>
                     <p class="description pbc-last-update"<?php echo $pbc_last_update ? '' : ' style="display: none;"'; ?>>
                         <?php
@@ -267,6 +286,7 @@ class Prevent_Browser_Caching_Admin_Settings
                     function pbc_update_clear_cache_time( element ) {
                         var update_button = jQuery( element );
                         var feedback = jQuery( '.pbc-update-feedback' );
+                        var note = jQuery( '.pbc-update-feedback-note' );
                         var original_text = update_button.text();
 
                         var data = {
@@ -276,10 +296,19 @@ class Prevent_Browser_Caching_Admin_Settings
 
                         update_button.attr( 'disabled', true ).text( '<?php echo esc_js( __( 'Updating…', 'prevent-browser-caching' ) ); ?>' );
                         feedback.hide();
+                        note.hide();
 
                         jQuery.post( ajaxurl, data )
-                            .done( function() {
-                                feedback.css( 'color', '#00a32a' ).text( '<?php echo esc_js( __( '✓ Done — visitors will get the fresh files.', 'prevent-browser-caching' ) ); ?>' ).show();
+                            .done( function( response ) {
+                                var data = ( response && response.data ) ? response.data : {};
+                                var versions = data.versions || data.message || '<?php echo esc_js( __( 'Done — visitors will get the fresh files.', 'prevent-browser-caching' ) ); ?>';
+
+                                feedback.css( 'color', '#00a32a' ).text( '✓ ' + versions ).show();
+
+                                if ( data.purge_line ) {
+                                    note.css( 'color', data.purge_color || '#996800' ).text( data.purge_line ).show();
+                                }
+
                                 jQuery( '.pbc-last-update' ).text( '<?php echo esc_js( __( 'Last manual update: just now.', 'prevent-browser-caching' ) ); ?>' ).show();
                             } )
                             .fail( function() {
@@ -371,9 +400,18 @@ class Prevent_Browser_Caching_Admin_Settings
     {
         $this->verify_ajax_request();
 
-        Prevent_Browser_Caching::instance()->bump_versions();
+        $pbc = Prevent_Browser_Caching::instance();
+        $result = $pbc->bump_versions();
 
-        exit;
+        $parts = $pbc->describe_bump_result_parts( $result );
+
+        wp_send_json_success( array(
+            'message' => $pbc->describe_bump_result( $result ),
+            'versions' => $parts['versions'],
+            'purge_line' => $parts['purge_line'],
+            'purge_state' => $parts['purge_state'],
+            'purge_color' => Prevent_Browser_Caching::bump_report_color( $parts['purge_state'] ),
+        ) );
     }
 
     /**

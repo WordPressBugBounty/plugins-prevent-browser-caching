@@ -4,7 +4,7 @@ Tags: browser cache, clear cache, cache busting, versioning, cache
 Requires at least: 4.7
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 3.0.0
+Stable tag: 3.1.0
 Donate link: https://tutori.org/donate/
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -22,13 +22,16 @@ Prevent Browser Caching makes sure browsers always load the current version of y
 * **CSS & JS versions.** WordPress loads assets with a "ver" URL parameter (e.g. `style.css?ver=4.9.6`). Browsers cache the file until this parameter changes. In the recommended automatic mode the plugin sets the version from the file's own modification time: browser caching works at full strength, and the moment you update a file every visitor gets the new one.
 * **Image versions.** When you edit or replace a file in the Media Library, visitors get the new image instead of the cached one.
 * **HTML page freshness.** Asks browsers to check for a newer version of a page before showing a cached copy — fixes "I still see the old page on my phone".
-* **One-click update.** The "Update versions" toolbar button forces fresh copies of all assets for every visitor.
+* **One-click update.** The "Update versions" toolbar button forces fresh copies of all assets for every visitor — and shows a short report of what exactly happened.
+* **Page cache stays in sync (opt-in).** If a page-cache plugin is active, updating versions can also clear its cache — so cached HTML stops referencing the old file versions and every visitor sees the new site immediately. One checkbox turns it on, and after every update the plugin reports what was refreshed and what happened to the page cache. Works with WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, WP-Optimize, Breeze, Cache Enabler, Hummingbird, SiteGround Optimizer, Swift Performance and Comet Cache.
+* **CLI & AI agents.** WP-CLI commands (`wp pbc update`, `wp pbc status`) and WordPress Abilities let deploy scripts and AI agents update versions safely.
 
 = Safe by default =
 
 * External URLs (payment scripts, CDNs, third-party services) are left untouched — some of them break when an unexpected "ver" parameter is added. You can turn external versioning back on with one checkbox.
 * Specific files (by part of the URL) or script/style handles can be excluded from versioning — CSS, JS and images alike.
 * If a page-cache plugin is active, the HTML freshness headers step aside automatically.
+* Another plugin's page cache is never cleared unless you enable that yourself — the purge-on-update integration is opt-in, and the report after every update tells you whether the page cache was cleared or left alone.
 
 = Update modes =
 
@@ -50,6 +53,22 @@ Filters for fine-tuning:
 
 * `pbc_skip_src( $skip, $src, $handle )` — return `true` to leave a given asset URL untouched.
 * `pbc_assets_version( $ver, $src, $handle )` — change the version applied to a given asset.
+* `pbc_purge_page_cache( $purge, $plugin_name )` — return `false` to prevent the page-cache purge on version updates.
+* `pbc_after_bump( $result )` — action fired after every version update, with the new timestamp and the purge outcome.
+
+= WP-CLI =
+
+* `wp pbc update` — updates the versions (and clears the detected page cache when the settings option is on). Add `--skip-purge` to leave the page cache alone for that run.
+* `wp pbc status` — shows the mode, what is versioned, the last manual update and the detected page-cache plugin. Supports `--format=table|json|yaml`.
+
+= Abilities (AI agents & automation) =
+
+On WordPress 6.9+ the plugin registers two Abilities, discoverable via the Abilities API, REST and the MCP adapter — so AI agents and site-management tools can operate the plugin without custom glue code:
+
+* `prevent-browser-caching/bump-versions` — update the versions; optional boolean input `purge` (set `false` to skip the page-cache purge).
+* `prevent-browser-caching/status` — read-only report of the current configuration.
+
+Both require the `manage_options` capability.
 
 Legacy: earlier versions documented a `prevent_browser_caching()` function instead. It still works exactly as before — it disables the plugin's admin settings and gives you full control — but I recommend the filter above: a bare function call in functions.php triggers a fatal error if the plugin is ever deactivated. If you keep using the function, guard it:
 
@@ -71,7 +90,11 @@ No. In the recommended automatic mode browser caching keeps working at full stre
 
 = Does it work together with page caching plugins? =
 
-Yes. Versioned asset URLs end up in the cached HTML like any others. Note: if your page cache serves stale HTML, visitors will get the old asset versions from it — purge the page cache after big changes. The plugin detects popular page-cache plugins and leaves HTML headers to them.
+Yes — and since 3.1.0 they can actively cooperate. Versioned asset URLs end up in the cached HTML like any others, so serving stale HTML used to mean serving old asset versions with it. When the "Also clear the page cache" checkbox on the settings page is enabled, pressing "Update versions" (toolbar, settings page, WP-CLI or an ability) also clears the detected page-cache plugin's cache, so that HTML is regenerated with the new versions. Supported: WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, WP-Optimize, Breeze, Cache Enabler, Hummingbird, SiteGround Optimizer, Swift Performance, Comet Cache. The checkbox is off by default — another plugin's cache is only touched when you say so (for example, if your page cache serves logged-out visitors only, you may prefer not to rebuild it on every update). Either way, the report shown after every update says whether the page cache was cleared, and the version update always completes even if a purge fails. The plugin also keeps leaving HTML cache headers to the page-cache plugin.
+
+= Does the automatic mode clear my page cache when a file changes? =
+
+No — and that's by design, not an oversight. In the automatic mode the version comes from the file's modification time, read at the moment a page is rendered; nothing "happens" on the server when you upload a changed file, so there is no event to clear the page cache on. Cached HTML keeps the old asset versions until the page cache expires or is cleared. After bigger changes, press "Update versions" — with the "Also clear the page cache" option enabled, that both updates the versions and clears the detected page cache in one click.
 
 = Why don't external files get a version by default? =
 
@@ -113,15 +136,29 @@ If you added `prevent_browser_caching( ... )` to your theme's functions.php, tha
 
 == Screenshots ==
 
-1. The settings page: choose what to keep fresh and when to update versions.
+1. The settings page: choose what to keep fresh, when to update versions, and whether to also clear the detected page cache.
 2. Upgrading from 2.x: your settings keep working as before, and one click enables the recommended setup (reversible).
+3. After a manual update the plugin reports what was refreshed and what happened to the page cache.
 
 == Upgrade Notice ==
+
+= 3.1.0 =
+"Update versions" can now also clear the page cache of a detected caching plugin (12 supported; opt-in checkbox, off by default) and reports what happened after every update. New: WP-CLI commands and Abilities for AI agents. All existing settings keep working unchanged.
 
 = 3.0.0 =
 Your saved settings keep working exactly as before. Open Settings → Prevent Browser Caching to enable the new recommended mode (versions from file modification time, external URLs untouched, image cache busting) with one click.
 
 == Changelog ==
+
+= 3.1.0 =
+* New: "Update versions" can now also clear the page cache when one of the supported caching plugins is active — WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, WP-Optimize, Breeze, Cache Enabler, Hummingbird, SiteGround Optimizer, Swift Performance, Comet Cache. Fixes "I updated the versions, but visitors still got the old design from the page cache". Opt-in: a settings checkbox turns it on (off by default — another plugin's cache is only touched when you say so). Each plugin is purged through its own public API; every call is guarded, and the version update always completes even if a purge fails.
+* New: after every "Update versions" click the plugin reports what happened — which asset types got new versions (per your settings) and whether the detected page cache was cleared. The report shows inline on the settings page and as a one-time notice after using the toolbar button.
+* New: WP-CLI support — `wp pbc update [--skip-purge]` and `wp pbc status [--format=table|json|yaml]`.
+* New: on WordPress 6.9+ the plugin registers two Abilities for AI agents and automation, `prevent-browser-caching/bump-versions` and `prevent-browser-caching/status` (Abilities API / REST / MCP adapter; require the `manage_options` capability).
+* New for developers: the `pbc_purge_page_cache` filter (veto the purge) and the `pbc_after_bump` action (observe every version update and its purge outcome).
+* Fixed: image URLs inside RSS feeds no longer get a "ver" parameter.
+* Fixed: an existing "ver" query parameter in image URLs is now detected precisely — a "ver=" fragment inside another parameter name no longer counts as one.
+* Housekeeping: uninstall on multisite now cleans up networks with more than 100 sites.
 
 = 3.0.0 =
 * New automatic mode (now the recommended default): the assets version is taken from the file modification time, so browser caching works at full strength and busts exactly when a file changes.

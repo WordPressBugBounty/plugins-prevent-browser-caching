@@ -81,8 +81,10 @@ class Prevent_Browser_Caching
 
             if ( is_admin() ) {
                 add_action( 'admin_init', array( $this, 'update_css_js' ), 10000 );
+                add_action( 'admin_notices', array( $this, 'maybe_print_bump_report' ) );
             } else {
                 add_action( 'template_redirect', array( $this, 'update_css_js' ), 10000 );
+                add_action( 'wp_footer', array( $this, 'maybe_print_bump_report' ), 10000 );
             }
         }
 
@@ -173,6 +175,7 @@ class Prevent_Browser_Caching
             'media_versions' => true,
             'html_freshness' => true,
             'show_on_toolbar' => true,
+            'purge_page_cache' => false,
             'legacy_defaults' => false,
         );
     }
@@ -197,6 +200,7 @@ class Prevent_Browser_Caching
             'media_versions' => false,
             'html_freshness' => false,
             'show_on_toolbar' => false,
+            'purge_page_cache' => false,
             'legacy_defaults' => true,
         );
     }
@@ -250,7 +254,7 @@ class Prevent_Browser_Caching
             'exclusions' => $exclusions,
         );
 
-        foreach ( array( 'assets', 'version_external', 'admin_area', 'media_versions', 'html_freshness', 'show_on_toolbar' ) as $key ) {
+        foreach ( array( 'assets', 'version_external', 'admin_area', 'media_versions', 'html_freshness', 'show_on_toolbar', 'purge_page_cache' ) as $key ) {
             if ( isset( $options[ $key ] ) ) {
                 $filtered[ $key ] = (bool) $options[ $key ];
             } elseif ( $is_form ) {
@@ -325,6 +329,31 @@ class Prevent_Browser_Caching
     public function get_media_time()
     {
         return intval( get_option( 'prevent_browser_caching_media_time' ) );
+    }
+
+    /**
+     * Machine-readable status of the plugin's freshness configuration.
+     * Single source for `wp pbc status` and the `status` ability — the keys
+     * are a stable developer contract, do not rename.
+     *
+     * @return array
+     */
+    public function get_status()
+    {
+        $options = $this->get_options();
+
+        return array(
+            'mode' => $options['clear_cache_automatically'],
+            'assets' => (bool) $options['assets'],
+            'media' => (bool) $options['media_versions'],
+            'html' => (bool) $options['html_freshness'],
+            'version_external' => (bool) $options['version_external'],
+            'purge_page_cache' => (bool) $options['purge_page_cache'],
+            'last_manual_update' => $this->get_clear_cache_time(),
+            'media_time' => $this->get_media_time(),
+            'page_cache_plugin' => self::get_active_page_cache_plugin(),
+            'plugin_version' => defined( 'PREVENT_BROWSER_CACHING_VERSION' ) ? PREVENT_BROWSER_CACHING_VERSION : '',
+        );
     }
 
     /**
@@ -544,7 +573,8 @@ class Prevent_Browser_Caching
 
     /**
      * Whether media query args may be added in the current request context.
-     * Never touch URLs handed to editors/APIs — only rendered front-end output.
+     * Never touch URLs handed to editors/APIs or syndicated in feeds — only
+     * rendered front-end output.
      *
      * @return bool
      */
@@ -558,7 +588,25 @@ class Prevent_Browser_Caching
             return false;
         }
 
+        // Feed readers treat a changed URL as a changed item; a site-wide media
+        // bump must not churn every subscriber's feed.
+        if ( function_exists( 'is_feed' ) && is_feed() ) {
+            return false;
+        }
+
         return true;
+    }
+
+    /**
+     * Whether the URL already carries a "ver" query parameter. Matches only a
+     * real param boundary, so "server=" / "driver=" don't count as versioned.
+     *
+     * @param string $url
+     * @return bool
+     */
+    protected function url_has_ver_arg( $url )
+    {
+        return (bool) preg_match( '/[?&]ver=/', (string) $url );
     }
 
     /**
@@ -599,7 +647,7 @@ class Prevent_Browser_Caching
             return $image;
         }
 
-        if ( false !== strpos( $image[0], 'ver=' ) || $this->is_excluded_src( $image[0] ) ) {
+        if ( $this->url_has_ver_arg( $image[0] ) || $this->is_excluded_src( $image[0] ) ) {
             return $image;
         }
 
@@ -635,7 +683,7 @@ class Prevent_Browser_Caching
         }
 
         foreach ( $sources as $key => $source ) {
-            if ( isset( $source['url'] ) && false === strpos( $source['url'], 'ver=' ) && ! $this->is_excluded_src( $source['url'] ) ) {
+            if ( isset( $source['url'] ) && ! $this->url_has_ver_arg( $source['url'] ) && ! $this->is_excluded_src( $source['url'] ) ) {
                 $sources[ $key ]['url'] = $this->append_time_to_ver( $source['url'], $version );
             }
         }
@@ -890,7 +938,11 @@ class Prevent_Browser_Caching
             return;
         }
 
-        $this->bump_versions();
+        $result = $this->bump_versions();
+
+        // Stored per user and printed once on the page we redirect to,
+        // so the click gets visible feedback (admin notice or front toast).
+        set_transient( 'pbc_bump_report_' . get_current_user_id(), $this->describe_bump_result_parts( $result ), 2 * MINUTE_IN_SECONDS );
 
         $current_url = $this->get_current_url();
         $redirect_url = remove_query_arg( 'pbc_update_css_js', $current_url );
@@ -900,10 +952,185 @@ class Prevent_Browser_Caching
     }
 
     /**
-     * Bumps the site-wide assets version, and the media version when media
-     * versioning is on. Used by the toolbar button and the settings page.
+     * Structured summary of a bump_versions() result for the UI report:
+     * a success line (what got a new version, per the current options) and a
+     * separate page-cache line with its own severity, so the report can show
+     * the purge outcome on its own visually distinct row.
+     *
+     * @param array $result Return value of bump_versions().
+     * @return array {
+     *     @type string $versions    "New versions are set for …" success sentence.
+     *     @type string $purge       Page-cache outcome sentence ('' when no plugin detected).
+     *     @type string $purge_line  The purge sentence with its "✓ " / "Note: " / "Warning: " prefix.
+     *     @type string $purge_state 'purged' | 'disabled' | 'skipped' | 'failed' | ''.
+     * }
      */
-    public function bump_versions() {
+    public function describe_bump_result_parts( $result )
+    {
+        $options = $this->get_options();
+
+        if ( $options['assets'] && $options['media_versions'] ) {
+            $versions = __( 'New versions are set for styles & scripts and images.', 'prevent-browser-caching' );
+        } elseif ( $options['assets'] ) {
+            $versions = __( 'New versions are set for styles & scripts.', 'prevent-browser-caching' );
+        } elseif ( $options['media_versions'] ) {
+            $versions = __( 'New versions are set for images.', 'prevent-browser-caching' );
+        } else {
+            $versions = __( 'Versions updated.', 'prevent-browser-caching' );
+        }
+
+        $parts = array(
+            'versions' => $versions,
+            'purge' => '',
+            'purge_line' => '',
+            'purge_state' => '',
+        );
+
+        $purge = isset( $result['purge'] ) && is_array( $result['purge'] ) ? $result['purge'] : array();
+        $plugin = isset( $purge['plugin'] ) ? $purge['plugin'] : '';
+
+        if ( '' === $plugin ) {
+            return $parts;
+        }
+
+        $reason = isset( $purge['reason'] ) ? $purge['reason'] : '';
+
+        if ( ! empty( $purge['purged'] ) ) {
+            $parts['purge_state'] = 'purged';
+            $parts['purge'] = sprintf(
+                /* translators: %s: page cache plugin name. */
+                __( 'The %s page cache was also cleared, so every visitor sees the changes immediately.', 'prevent-browser-caching' ),
+                $plugin
+            );
+            $parts['purge_line'] = '✓ ' . $parts['purge'];
+        } elseif ( 'page cache purge disabled' === $reason ) {
+            $parts['purge_state'] = 'disabled';
+            $parts['purge'] = sprintf(
+                /* translators: %s: page cache plugin name. */
+                __( 'The %s page cache was NOT cleared (the option is off), so visitors may keep seeing cached pages with the old versions until it expires.', 'prevent-browser-caching' ),
+                $plugin
+            );
+            $parts['purge_line'] = __( 'Note:', 'prevent-browser-caching' ) . ' ' . $parts['purge'];
+        } elseif ( 'page cache purge skipped' === $reason ) {
+            $parts['purge_state'] = 'skipped';
+            $parts['purge'] = sprintf(
+                /* translators: %s: page cache plugin name. */
+                __( 'The %s page cache was left untouched (purge skipped for this run).', 'prevent-browser-caching' ),
+                $plugin
+            );
+            $parts['purge_line'] = __( 'Note:', 'prevent-browser-caching' ) . ' ' . $parts['purge'];
+        } else {
+            $parts['purge_state'] = 'failed';
+            $parts['purge'] = sprintf(
+                /* translators: %s: page cache plugin name. */
+                __( 'The %s page cache could not be cleared — you may need to clear it manually.', 'prevent-browser-caching' ),
+                $plugin
+            );
+            $parts['purge_line'] = __( 'Warning:', 'prevent-browser-caching' ) . ' ' . $parts['purge'];
+        }
+
+        return $parts;
+    }
+
+    /**
+     * Flat one-string variant of describe_bump_result_parts(), for contexts
+     * that can't render two lines.
+     *
+     * @param array $result Return value of bump_versions().
+     * @return string
+     */
+    public function describe_bump_result( $result )
+    {
+        $parts = $this->describe_bump_result_parts( $result );
+
+        return '' === $parts['purge'] ? $parts['versions'] : $parts['versions'] . ' ' . $parts['purge'];
+    }
+
+    /**
+     * Text color for a purge_state of describe_bump_result_parts().
+     *
+     * @param string $state
+     * @return string CSS color.
+     */
+    public static function bump_report_color( $state )
+    {
+        if ( 'purged' === $state ) {
+            return '#00a32a';
+        }
+
+        if ( 'failed' === $state ) {
+            return '#b32d2e';
+        }
+
+        return '#996800';
+    }
+
+    /**
+     * Prints the one-time report stored by update_css_js(): a standard admin
+     * notice in wp-admin, a small self-dismissing toast under the toolbar on
+     * the front end. Shown only to the user who pressed the button.
+     */
+    public function maybe_print_bump_report()
+    {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+
+        $key = 'pbc_bump_report_' . get_current_user_id();
+        $report = get_transient( $key );
+
+        if ( ! is_array( $report ) || empty( $report['versions'] ) ) {
+            return;
+        }
+
+        delete_transient( $key );
+
+        $purge_line = isset( $report['purge_line'] ) ? $report['purge_line'] : '';
+        $purge_color = self::bump_report_color( isset( $report['purge_state'] ) ? $report['purge_state'] : '' );
+
+        if ( is_admin() ) {
+            ?>
+            <div class="notice notice-success is-dismissible">
+                <p><?php echo esc_html( '✓ ' . $report['versions'] ); ?></p>
+                <?php if ( '' !== $purge_line ): ?>
+                    <p style="color: <?php echo esc_attr( $purge_color ); ?>;"><?php echo esc_html( $purge_line ); ?></p>
+                <?php endif; ?>
+            </div>
+            <?php
+            return;
+        }
+        ?>
+        <div id="pbc-bump-report" style="position: fixed; top: 40px; right: 12px; z-index: 99999; max-width: 380px; padding: 10px 14px; background: #fff; border-left: 4px solid #00a32a; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); color: #1d2327; font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+            <div style="color: #00a32a;"><?php echo esc_html( '✓ ' . $report['versions'] ); ?></div>
+            <?php if ( '' !== $purge_line ): ?>
+                <div style="margin-top: 6px; color: <?php echo esc_attr( $purge_color ); ?>;"><?php echo esc_html( $purge_line ); ?></div>
+            <?php endif; ?>
+        </div>
+        <script id="pbc-bump-report-script">
+            setTimeout( function() {
+                var pbcReport = document.getElementById( 'pbc-bump-report' );
+                if ( pbcReport && pbcReport.parentNode ) {
+                    pbcReport.parentNode.removeChild( pbcReport );
+                }
+            }, 8000 );
+        </script>
+        <?php
+    }
+
+    /**
+     * Bumps the site-wide assets version, and the media version when media
+     * versioning is on, then purges the detected page cache when enabled.
+     * Used by the toolbar button, the settings page, WP-CLI and the ability.
+     *
+     * @param bool $skip_purge Force-skip the page-cache purge for this call
+     *                         (the settings option remains the master switch).
+     * @return array {
+     *     @type int   $time  The new version timestamp.
+     *     @type array $purge Result of the page-cache purge (see
+     *                        Prevent_Browser_Caching_Integrations::purge_page_cache()).
+     * }
+     */
+    public function bump_versions( $skip_purge = false ) {
         $time = $this->get_time_code();
 
         update_option( 'prevent_browser_caching_clear_cache_time', $time );
@@ -913,6 +1140,35 @@ class Prevent_Browser_Caching
         if ( $options['media_versions'] ) {
             update_option( 'prevent_browser_caching_media_time', $time );
         }
+
+        // Bump first, purge second: a purge failure must never lose the bump.
+        $purge = array(
+            'purged' => false,
+            'plugin' => self::get_active_page_cache_plugin(),
+            'reason' => $skip_purge ? 'page cache purge skipped' : 'page cache purge disabled',
+        );
+
+        if ( ! $skip_purge
+            && ! empty( $options['purge_page_cache'] )
+            && apply_filters( 'pbc_purge_page_cache', true, $purge['plugin'] ) ) {
+
+            if ( ! class_exists( 'Prevent_Browser_Caching_Integrations' ) ) {
+                include_once __DIR__ . '/class-prevent-browser-caching-integrations.php';
+            }
+
+            $purge = Prevent_Browser_Caching_Integrations::purge_page_cache();
+        }
+
+        $result = array( 'time' => $time, 'purge' => $purge );
+
+        /**
+         * Fires after the versions are bumped (and the page cache purge attempted).
+         *
+         * @param array $result { 'time' => int, 'purge' => array }
+         */
+        do_action( 'pbc_after_bump', $result );
+
+        return $result;
     }
 
     /**

@@ -28,7 +28,9 @@ function prevent_browser_caching_uninstall_site()
 }
 
 if ( is_multisite() ) {
-    $pbc_site_ids = get_sites( array( 'fields' => 'ids' ) );
+    // number => 0 removes get_sites()'s default 100-site limit, so large
+    // networks are cleaned in full.
+    $pbc_site_ids = get_sites( array( 'fields' => 'ids', 'number' => 0 ) );
 
     foreach ( $pbc_site_ids as $pbc_site_id ) {
         switch_to_blog( $pbc_site_id );
