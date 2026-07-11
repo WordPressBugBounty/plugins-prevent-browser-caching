@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Prevent Browser Caching
  * Description: Prevents browser cache problems: visitors always get the current version of your CSS, JS, images and pages, while caching keeps working.
- * Version: 3.1.0
+ * Version: 3.2.0
  * Requires at least: 4.7
  * Requires PHP: 7.2
  * Author: Kostya Tereshchuk
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'PREVENT_BROWSER_CACHING_VERSION' ) ) {
-    define( 'PREVENT_BROWSER_CACHING_VERSION', '3.1.0' );
+    define( 'PREVENT_BROWSER_CACHING_VERSION', '3.2.0' );
 }
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -112,11 +112,43 @@ if ( ! function_exists( 'prevent_browser_caching_activate' ) ) {
 
         add_option( 'prevent_browser_caching_options', Prevent_Browser_Caching::get_fresh_defaults() );
 
+        // Fresh installs never see the "what's new" notice; upgraded sites
+        // (option row already exists, no seen-version yet) see it once.
+        add_option( 'prevent_browser_caching_seen_version', PREVENT_BROWSER_CACHING_VERSION, '', false );
+
+        // A re-activation with the cache-policy option on must restore the
+        // .htaccess block that deactivation removed.
+        $pbc_existing = get_option( 'prevent_browser_caching_options' );
+
+        if ( is_array( $pbc_existing ) && ! empty( $pbc_existing['cache_policy'] ) ) {
+            Prevent_Browser_Caching::require_cache_policy_class();
+            Prevent_Browser_Caching_Cache_Policy::sync( array(), Prevent_Browser_Caching::instance()->filter_options( $pbc_existing ) );
+        }
+
         if ( ! $network_wide ) {
             set_transient( 'pbc_activation_redirect', 1, MINUTE_IN_SECONDS );
         }
     }
     register_activation_hook( __FILE__, 'prevent_browser_caching_activate' );
+}
+
+if ( ! function_exists( 'prevent_browser_caching_deactivate' ) ) {
+    /**
+     * On deactivation: a disabled plugin must leave no server-config footprint,
+     * so the .htaccess cache-policy block is removed (options are kept).
+     */
+    function prevent_browser_caching_deactivate()
+    {
+        if ( ! class_exists( 'Prevent_Browser_Caching' ) ) {
+            include_once dirname( __FILE__ ) . '/includes/class-prevent-browser-caching.php';
+        }
+
+        Prevent_Browser_Caching::require_cache_policy_class();
+
+        Prevent_Browser_Caching_Cache_Policy::remove_rules();
+        delete_option( Prevent_Browser_Caching_Cache_Policy::PROBE_OPTION );
+    }
+    register_deactivation_hook( __FILE__, 'prevent_browser_caching_deactivate' );
 }
 
 if ( ! function_exists( 'prevent_browser_caching_activation_redirect' ) ) {

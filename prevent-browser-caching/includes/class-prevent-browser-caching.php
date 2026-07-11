@@ -53,6 +53,14 @@ class Prevent_Browser_Caching
     protected $mtime_cache = array();
 
     /**
+     * Whether the post-update auto-bump already ran in this request
+     * (sequential single updates must produce one bump, not several).
+     *
+     * @var bool
+     */
+    protected $auto_bump_done = false;
+
+    /**
      * Prevent_Browser_Caching instance.
      *
      * @static
@@ -108,6 +116,14 @@ class Prevent_Browser_Caching
             add_action( 'send_headers', array( $this, 'send_html_freshness_header' ) );
             add_action( 'wp_footer', array( $this, 'print_bfcache_guard_script' ), 10000 );
         }
+
+        if ( $options['auto_bump'] ) {
+            add_action( 'upgrader_process_complete', array( $this, 'handle_upgrader_complete' ), 10000, 2 );
+        }
+
+        // Keeps the .htaccess cache-policy block in step with the settings,
+        // whichever surface saved them (form, ajax, WP-CLI).
+        add_action( 'update_option_prevent_browser_caching_options', array( $this, 'on_options_updated' ), 10, 2 );
     }
 
     /**
@@ -176,6 +192,8 @@ class Prevent_Browser_Caching
             'html_freshness' => true,
             'show_on_toolbar' => true,
             'purge_page_cache' => false,
+            'cache_policy' => false,
+            'auto_bump' => false,
             'legacy_defaults' => false,
         );
     }
@@ -201,6 +219,8 @@ class Prevent_Browser_Caching
             'html_freshness' => false,
             'show_on_toolbar' => false,
             'purge_page_cache' => false,
+            'cache_policy' => false,
+            'auto_bump' => false,
             'legacy_defaults' => true,
         );
     }
@@ -254,7 +274,7 @@ class Prevent_Browser_Caching
             'exclusions' => $exclusions,
         );
 
-        foreach ( array( 'assets', 'version_external', 'admin_area', 'media_versions', 'html_freshness', 'show_on_toolbar', 'purge_page_cache' ) as $key ) {
+        foreach ( array( 'assets', 'version_external', 'admin_area', 'media_versions', 'html_freshness', 'show_on_toolbar', 'purge_page_cache', 'cache_policy', 'auto_bump' ) as $key ) {
             if ( isset( $options[ $key ] ) ) {
                 $filtered[ $key ] = (bool) $options[ $key ];
             } elseif ( $is_form ) {
@@ -262,6 +282,11 @@ class Prevent_Browser_Caching
             } else {
                 $filtered[ $key ] = $defaults[ $key ];
             }
+        }
+
+        // A one-year cache policy is only safe while CSS/JS URLs are versioned.
+        if ( ! $filtered['assets'] ) {
+            $filtered['cache_policy'] = false;
         }
 
         // Saving the settings form means the user has seen the new interface —
@@ -342,6 +367,16 @@ class Prevent_Browser_Caching
     {
         $options = $this->get_options();
 
+        $cache_policy_state = '';
+
+        if ( $options['cache_policy'] ) {
+            self::require_cache_policy_class();
+            $probe = Prevent_Browser_Caching_Cache_Policy::get_probe_result();
+            $cache_policy_state = $probe['state'];
+        }
+
+        $last_auto_bump = get_option( 'prevent_browser_caching_last_auto_bump' );
+
         return array(
             'mode' => $options['clear_cache_automatically'],
             'assets' => (bool) $options['assets'],
@@ -349,11 +384,112 @@ class Prevent_Browser_Caching
             'html' => (bool) $options['html_freshness'],
             'version_external' => (bool) $options['version_external'],
             'purge_page_cache' => (bool) $options['purge_page_cache'],
+            'cache_policy' => (bool) $options['cache_policy'],
+            'cache_policy_state' => $cache_policy_state,
+            'auto_bump' => (bool) $options['auto_bump'],
+            'last_auto_bump' => is_array( $last_auto_bump ) && isset( $last_auto_bump['time'] ) ? intval( $last_auto_bump['time'] ) : 0,
             'last_manual_update' => $this->get_clear_cache_time(),
             'media_time' => $this->get_media_time(),
             'page_cache_plugin' => self::get_active_page_cache_plugin(),
             'plugin_version' => defined( 'PREVENT_BROWSER_CACHING_VERSION' ) ? PREVENT_BROWSER_CACHING_VERSION : '',
         );
+    }
+
+    /**
+     * Load the cache-policy class on demand (settings save, status, hooks).
+     *
+     * @static
+     */
+    public static function require_cache_policy_class()
+    {
+        if ( ! class_exists( 'Prevent_Browser_Caching_Cache_Policy' ) ) {
+            include_once __DIR__ . '/class-prevent-browser-caching-cache-policy.php';
+        }
+    }
+
+    /**
+     * Runs whenever prevent_browser_caching_options is updated, from any
+     * surface: refreshes the in-memory copy and syncs the .htaccess block.
+     *
+     * @param mixed $old_value
+     * @param mixed $value
+     */
+    public function on_options_updated( $old_value, $value )
+    {
+        // Later reads in this request must see the new values.
+        $this->options = array();
+
+        self::require_cache_policy_class();
+
+        Prevent_Browser_Caching_Cache_Policy::sync(
+            is_array( $old_value ) ? $old_value : array(),
+            $this->filter_options( $value )
+        );
+    }
+
+    /**
+     * Auto-bump after plugin/theme/core updates (incl. auto-updates), using
+     * the least invalidation the current mode allows:
+     * - "auto" mode: updated files already self-bust via their new mtimes, so
+     *   only the page cache needs purging (its HTML still references old vers);
+     * - other modes: bump the assets version and purge per the option.
+     * The media version is never touched here — updates don't change uploads.
+     *
+     * @param WP_Upgrader $upgrader
+     * @param array $hook_extra
+     */
+    public function handle_upgrader_complete( $upgrader, $hook_extra )
+    {
+        if ( $this->auto_bump_done || ! is_array( $hook_extra ) ) {
+            return;
+        }
+
+        $action = isset( $hook_extra['action'] ) ? $hook_extra['action'] : '';
+        $type = isset( $hook_extra['type'] ) ? $hook_extra['type'] : '';
+
+        // Fresh installs create new URLs (nothing stale); translations don't
+        // change assets at all.
+        if ( 'update' !== $action || ! in_array( $type, array( 'plugin', 'theme', 'core' ), true ) ) {
+            return;
+        }
+
+        $this->auto_bump_done = true;
+
+        $options = $this->get_options();
+        $time = $this->get_time_code();
+        $bumped = false;
+
+        if ( 'auto' !== $options['clear_cache_automatically'] ) {
+            update_option( 'prevent_browser_caching_clear_cache_time', $time );
+            $this->clear_cache_time = $time;
+            $bumped = true;
+        }
+
+        $purge = array(
+            'purged' => false,
+            'plugin' => self::get_active_page_cache_plugin(),
+            'reason' => 'page cache purge disabled',
+        );
+
+        if ( ! empty( $options['purge_page_cache'] )
+            && apply_filters( 'pbc_purge_page_cache', true, $purge['plugin'] ) ) {
+
+            if ( ! class_exists( 'Prevent_Browser_Caching_Integrations' ) ) {
+                include_once __DIR__ . '/class-prevent-browser-caching-integrations.php';
+            }
+
+            $purge = Prevent_Browser_Caching_Integrations::purge_page_cache();
+        }
+
+        // Proof-of-life for the settings page ("Last automatic refresh: …").
+        update_option( 'prevent_browser_caching_last_auto_bump', array( 'time' => $time, 'type' => $type ), false );
+
+        /**
+         * Fires after an automatic post-update refresh.
+         *
+         * @param array $context { 'type' => string, 'bumped' => bool, 'purge' => array }
+         */
+        do_action( 'pbc_after_auto_bump', array( 'type' => $type, 'bumped' => $bumped, 'purge' => $purge ) );
     }
 
     /**
@@ -873,7 +1009,13 @@ class Prevent_Browser_Caching
 
         foreach ( $pairs as $i => $pair ) {
             if ( 'ver' === $pair || 0 === strpos( $pair, 'ver=' ) ) {
-                $pairs[ $i ] = ( 'ver' === $pair ? 'ver=' : $pair ) . '.' . $time;
+                // A valueless "ver"/"ver=" takes the time directly — appending
+                // would produce a stray leading dot (ver=.123).
+                if ( 'ver' === $pair || 'ver=' === $pair ) {
+                    $pairs[ $i ] = 'ver=' . $time;
+                } else {
+                    $pairs[ $i ] = $pair . '.' . $time;
+                }
                 $found = true;
                 break;
             }

@@ -20,6 +20,7 @@ class Prevent_Browser_Caching_Admin_Settings
         add_action( 'wp_ajax_pbc_apply_recommended', array( $this, 'apply_recommended' ) );
         add_action( 'wp_ajax_pbc_dismiss_recommended', array( $this, 'dismiss_recommended' ) );
         add_action( 'wp_ajax_pbc_restore_previous', array( $this, 'restore_previous' ) );
+        add_action( 'wp_ajax_pbc_dismiss_whats_new', array( $this, 'dismiss_whats_new' ) );
     }
 
     /**
@@ -97,7 +98,45 @@ class Prevent_Browser_Caching_Admin_Settings
                 $has_legacy_period = ( 'every_period' === $options['clear_cache_automatically'] );
                 $has_advanced = $options['version_external'] || $options['admin_area'];
 
+                Prevent_Browser_Caching::require_cache_policy_class();
+
+                global $is_nginx;
+
+                $cache_policy_auto_write = Prevent_Browser_Caching_Cache_Policy::should_auto_write();
+                $cache_policy_probe = Prevent_Browser_Caching_Cache_Policy::get_probe_result();
+                $cache_policy_snippet = $is_nginx
+                    ? Prevent_Browser_Caching_Cache_Policy::get_nginx_snippet( $options )
+                    : Prevent_Browser_Caching_Cache_Policy::get_htaccess_snippet( $options );
+                $show_cache_policy_snippet = $options['cache_policy']
+                    && ( ! $cache_policy_auto_write || 'not_detected' === $cache_policy_probe['state'] );
+
+                $last_auto_bump = get_option( 'prevent_browser_caching_last_auto_bump' );
+                $auto_bump_type_labels = array(
+                    'plugin' => __( 'plugin update', 'prevent-browser-caching' ),
+                    'theme' => __( 'theme update', 'prevent-browser-caching' ),
+                    'core' => __( 'WordPress update', 'prevent-browser-caching' ),
+                );
+
+                // Saving the settings counts as having seen the 3.2 features.
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- only reads the presence of core's settings-updated flag; no input value is used or stored.
+                if ( isset( $_GET['settings-updated'] ) ) {
+                    update_option( 'prevent_browser_caching_seen_version', PREVENT_BROWSER_CACHING_VERSION, false );
+                }
+
+                $show_whats_new = version_compare( (string) get_option( 'prevent_browser_caching_seen_version' ), '3.2.0', '<' );
+
                 ?>
+                <?php if ( $show_whats_new ): ?>
+                    <div class="notice notice-info pbc-whats-new">
+                        <p>
+                            <strong><?php esc_html_e( 'New in 3.2 — two optional features:', 'prevent-browser-caching' ); ?></strong><br>
+                            <?php esc_html_e( 'Browsers can now keep your static files for a whole year without ever showing visitors an outdated file (see "Speed up" below), and versions can refresh automatically after plugin, theme and WordPress updates (see "When to update"). Both are off until you enable them.', 'prevent-browser-caching' ); ?>
+                        </p>
+                        <p>
+                            <button type="button" class="button" onclick="pbc_ajax_action(this, 'pbc_dismiss_whats_new')"><?php esc_html_e( 'Got it', 'prevent-browser-caching' ); ?></button>
+                        </p>
+                    </div>
+                <?php endif; ?>
                 <?php if ( $options['legacy_defaults'] ): ?>
                     <div class="notice notice-info pbc-recommended-banner">
                         <p>
@@ -215,9 +254,88 @@ class Prevent_Browser_Caching_Admin_Settings
                             <input type="hidden" name="prevent_browser_caching_options[purge_page_cache]" value="<?php echo $options['purge_page_cache'] ? '1' : '0'; ?>" />
                         <?php endif; ?>
 
+                        <p class="pbc-auto-bump-option">
+                            <label>
+                                <input type="checkbox" name="prevent_browser_caching_options[auto_bump]" value="1"<?php checked( $options['auto_bump'] ); ?> />
+                                <?php esc_html_e( 'Refresh versions automatically after plugin, theme or WordPress updates', 'prevent-browser-caching' ); ?>
+                            </label>
+                            <span class="description pbc-indent" style="display: block;"><?php esc_html_e( 'Updates change CSS and JS files. With this on, visitors get the new files right after every update (including automatic ones) — no need to press "Update versions". Works together with the page cache option above.', 'prevent-browser-caching' ); ?></span>
+                            <?php if ( $options['auto_bump'] && is_array( $last_auto_bump ) && ! empty( $last_auto_bump['time'] ) ): ?>
+                                <span class="description pbc-indent" style="display: block;">
+                                    <?php
+                                    $pbc_bump_type = isset( $last_auto_bump['type'] ) && isset( $auto_bump_type_labels[ $last_auto_bump['type'] ] )
+                                        ? $auto_bump_type_labels[ $last_auto_bump['type'] ]
+                                        : __( 'update', 'prevent-browser-caching' );
+
+                                    echo esc_html( sprintf(
+                                        /* translators: 1: human-readable time difference, e.g. "2 hours", 2: update type, e.g. "plugin update". */
+                                        __( 'Last automatic refresh: %1$s ago (%2$s).', 'prevent-browser-caching' ),
+                                        human_time_diff( intval( $last_auto_bump['time'] ) ),
+                                        $pbc_bump_type
+                                    ) );
+                                    ?>
+                                </span>
+                            <?php endif; ?>
+                        </p>
+
                         <p class="pbc-manual-warning" style="display: none; color: #b32d2e;">
                             <?php esc_html_e( 'The toolbar button is disabled, so nothing will ever update the versions. Enable the toolbar button above, or use the "Update versions now" button on this page.', 'prevent-browser-caching' ); ?>
                         </p>
+                    </div>
+
+                    <div class="pbc-section">
+                        <p class="pbc-heading"><?php esc_html_e( 'Speed up:', 'prevent-browser-caching' ); ?></p>
+
+                        <label>
+                            <input type="checkbox" id="pbc-cache-policy" name="prevent_browser_caching_options[cache_policy]" value="1"<?php checked( $options['cache_policy'] ); ?><?php disabled( ! $options['assets'] ); ?> />
+                            <strong><?php esc_html_e( 'Let browsers keep static files for a year', 'prevent-browser-caching' ); ?></strong>
+                        </label>
+                        <p class="description pbc-indent"><?php esc_html_e( 'Serves CSS, JS, fonts and images with long-lived caching headers, so repeat visits load faster. Safe: a file\'s URL changes whenever the file changes, so visitors still see updates immediately. Also fixes the Lighthouse audit "Serve static assets with an efficient cache policy".', 'prevent-browser-caching' ); ?></p>
+
+                        <p class="description pbc-indent pbc-cache-policy-requires" style="<?php echo $options['assets'] ? 'display: none; ' : ''; ?>color: #996800;">
+                            <?php esc_html_e( 'Requires the "Styles & scripts" option above — long caching is only safe while file URLs are versioned.', 'prevent-browser-caching' ); ?>
+                        </p>
+
+                        <?php if ( $options['cache_policy'] ): ?>
+                            <?php if ( 'verified' === $cache_policy_probe['state'] ): ?>
+                                <p class="pbc-indent" style="color: #00a32a;">
+                                    <?php
+                                    echo esc_html( sprintf(
+                                        /* translators: %s: human-readable time difference, e.g. "2 hours". */
+                                        __( '✓ Long browser caching is active — verified on this site %s ago. Saving the settings re-checks it.', 'prevent-browser-caching' ),
+                                        human_time_diff( $cache_policy_probe['checked_at'] )
+                                    ) );
+                                    ?>
+                                </p>
+                            <?php elseif ( 'not_detected' === $cache_policy_probe['state'] ): ?>
+                                <p class="pbc-indent" style="color: #996800;">
+                                    <?php esc_html_e( 'Warning: the caching headers are not showing up yet. Possible reasons: the server ignores .htaccess, lacks the mod_headers / mod_expires modules, or WordPress cannot write to the .htaccess file. Ask your host, or add the rules below to the server configuration manually. Saving the settings re-checks this.', 'prevent-browser-caching' ); ?>
+                                </p>
+                            <?php else: ?>
+                                <p class="pbc-indent" style="color: #996800;">
+                                    <?php esc_html_e( 'Could not verify the headers automatically (the site could not reach itself). Check a CSS file\'s Cache-Control response header in your browser\'s developer tools.', 'prevent-browser-caching' ); ?>
+                                </p>
+                            <?php endif; ?>
+                        <?php endif; ?>
+
+                        <?php if ( $show_cache_policy_snippet ): ?>
+                            <details class="pbc-cache-policy-snippet"<?php echo 'not_detected' === $cache_policy_probe['state'] || ! $cache_policy_auto_write ? ' open' : ''; ?>>
+                                <summary><?php esc_html_e( 'Server rules for long browser caching', 'prevent-browser-caching' ); ?></summary>
+                                <?php if ( is_multisite() ): ?>
+                                    <p class="description"><?php esc_html_e( 'On multisite the plugin never edits the shared .htaccess automatically — add the rules to the server configuration manually.', 'prevent-browser-caching' ); ?></p>
+                                <?php endif; ?>
+                                <p class="description">
+                                    <?php
+                                    if ( $is_nginx ) {
+                                        esc_html_e( 'Add this to your nginx server block (inside server { … }) and reload nginx:', 'prevent-browser-caching' );
+                                    } else {
+                                        esc_html_e( 'Add this to the .htaccess file in your WordPress root folder (or ask your host to):', 'prevent-browser-caching' );
+                                    }
+                                    ?>
+                                </p>
+                                <textarea readonly rows="8" class="large-text code" onclick="this.select();"><?php echo esc_textarea( $cache_policy_snippet ); ?></textarea>
+                            </details>
+                        <?php endif; ?>
                     </div>
 
                     <div class="pbc-section">
@@ -362,6 +480,23 @@ class Prevent_Browser_Caching_Admin_Settings
                             if ( mode && toolbar && warning ) {
                                 warning.style.display = ( 'never' === mode.value && ! toolbar.checked ) ? '' : 'none';
                             }
+
+                            // Long caching is only safe while CSS/JS URLs are versioned
+                            // (mirrors the server-side invariant in filter_options).
+                            var cache_policy = document.getElementById( 'pbc-cache-policy' );
+                            var requires_note = document.querySelector( '.pbc-cache-policy-requires' );
+
+                            if ( assets && cache_policy ) {
+                                cache_policy.disabled = ! assets.checked;
+
+                                if ( ! assets.checked ) {
+                                    cache_policy.checked = false;
+                                }
+
+                                if ( requires_note ) {
+                                    requires_note.style.display = assets.checked ? 'none' : '';
+                                }
+                            }
                         }
 
                         document.addEventListener( 'change', function( event ) {
@@ -434,6 +569,10 @@ class Prevent_Browser_Caching_Admin_Settings
         $recommended['show_on_toolbar'] = $current['show_on_toolbar'];
         $recommended['clear_cache_automatically_minutes'] = $current['clear_cache_automatically_minutes'];
 
+        // One-click recommended must not silently flip the 3.2 opt-ins either way.
+        $recommended['cache_policy'] = $current['cache_policy'];
+        $recommended['auto_bump'] = $current['auto_bump'];
+
         update_option( 'prevent_browser_caching_options', $recommended );
 
         exit;
@@ -450,6 +589,18 @@ class Prevent_Browser_Caching_Admin_Settings
         $options['legacy_defaults'] = false;
 
         update_option( 'prevent_browser_caching_options', $options );
+
+        exit;
+    }
+
+    /**
+     * Ajax action: dismiss the one-time "what's new in 3.2" notice.
+     */
+    public function dismiss_whats_new()
+    {
+        $this->verify_ajax_request();
+
+        update_option( 'prevent_browser_caching_seen_version', PREVENT_BROWSER_CACHING_VERSION, false );
 
         exit;
     }

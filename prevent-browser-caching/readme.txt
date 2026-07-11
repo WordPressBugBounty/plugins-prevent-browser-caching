@@ -4,7 +4,7 @@ Tags: browser cache, clear cache, cache busting, versioning, cache
 Requires at least: 4.7
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 3.1.0
+Stable tag: 3.2.0
 Donate link: https://tutori.org/donate/
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -24,6 +24,8 @@ Prevent Browser Caching makes sure browsers always load the current version of y
 * **HTML page freshness.** Asks browsers to check for a newer version of a page before showing a cached copy — fixes "I still see the old page on my phone".
 * **One-click update.** The "Update versions" toolbar button forces fresh copies of all assets for every visitor — and shows a short report of what exactly happened.
 * **Page cache stays in sync (opt-in).** If a page-cache plugin is active, updating versions can also clear its cache — so cached HTML stops referencing the old file versions and every visitor sees the new site immediately. One checkbox turns it on, and after every update the plugin reports what was refreshed and what happened to the page cache. Works with WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, WP-Optimize, Breeze, Cache Enabler, Hummingbird, SiteGround Optimizer, Swift Performance and Comet Cache.
+* **Faster repeat visits (opt-in, new in 3.2).** Because versioning guarantees freshness, the plugin can safely serve your static files with one-year browser caching headers — the exact fix for the Lighthouse audit "Serve static assets with an efficient cache policy". It writes the rules through WordPress's own .htaccess API on Apache/LiteSpeed (removed again on deactivation), shows a ready-to-copy snippet for nginx, and then actually fetches one of your CSS files to verify the headers really work — the result is shown on the settings page.
+* **Auto refresh after updates (opt-in, new in 3.2).** Plugin, theme and WordPress updates change CSS and JS files. With this option every update — including automatic background updates — is followed by a version refresh (and a page-cache clear when that option is on), so visitors never see a broken layout after an update.
 * **CLI & AI agents.** WP-CLI commands (`wp pbc update`, `wp pbc status`) and WordPress Abilities let deploy scripts and AI agents update versions safely.
 
 = Safe by default =
@@ -32,6 +34,7 @@ Prevent Browser Caching makes sure browsers always load the current version of y
 * Specific files (by part of the URL) or script/style handles can be excluded from versioning — CSS, JS and images alike.
 * If a page-cache plugin is active, the HTML freshness headers step aside automatically.
 * Another plugin's page cache is never cleared unless you enable that yourself — the purge-on-update integration is opt-in, and the report after every update tells you whether the page cache was cleared or left alone.
+* The long-caching headers are opt-in too, and only available while CSS/JS versioning is on — the plugin never lets browsers hold files for a year without a way to bust them. Disabling the option (or deactivating the plugin) removes the rules completely.
 
 = Update modes =
 
@@ -55,6 +58,9 @@ Filters for fine-tuning:
 * `pbc_assets_version( $ver, $src, $handle )` — change the version applied to a given asset.
 * `pbc_purge_page_cache( $purge, $plugin_name )` — return `false` to prevent the page-cache purge on version updates.
 * `pbc_after_bump( $result )` — action fired after every version update, with the new timestamp and the purge outcome.
+* `pbc_cache_policy_rules( $rules, $options )` — change the generated long-caching rules before they are written to .htaccess (or shown as a snippet).
+* `pbc_after_auto_bump( $context )` — action fired after an automatic post-update refresh, with the update type and the purge outcome.
+* `PBC_DISABLE_HTACCESS_WRITE` — define this constant as `true` (e.g. in wp-config.php) and the plugin will never write to .htaccess itself; the settings page shows the rules for manual setup instead.
 
 = WP-CLI =
 
@@ -92,9 +98,37 @@ No. In the recommended automatic mode browser caching keeps working at full stre
 
 Yes — and since 3.1.0 they can actively cooperate. Versioned asset URLs end up in the cached HTML like any others, so serving stale HTML used to mean serving old asset versions with it. When the "Also clear the page cache" checkbox on the settings page is enabled, pressing "Update versions" (toolbar, settings page, WP-CLI or an ability) also clears the detected page-cache plugin's cache, so that HTML is regenerated with the new versions. Supported: WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, WP-Optimize, Breeze, Cache Enabler, Hummingbird, SiteGround Optimizer, Swift Performance, Comet Cache. The checkbox is off by default — another plugin's cache is only touched when you say so (for example, if your page cache serves logged-out visitors only, you may prefer not to rebuild it on every update). Either way, the report shown after every update says whether the page cache was cleared, and the version update always completes even if a purge fails. The plugin also keeps leaving HTML cache headers to the page-cache plugin.
 
+= Does it work with page builders (Elementor, Divi, Beaver Builder…)? =
+
+Yes. Builders generate their CSS as real files (usually in the uploads folder) and give them a fresh time-based version whenever they regenerate — Elementor, for example, serves its per-page CSS as `post-123.css?ver=<generation time>`, and that version changes every time the file is rewritten. On top of that, in the automatic mode this plugin adds its own version component from the file's modification time, so even a builder file rewritten in place busts its cache immediately. Together that makes the long-caching option safe for builder files too: their URLs always change when their content does.
+
+= Does it work with minification plugins (Autoptimize, WP-Optimize)? =
+
+Yes — verified against both. Minifiers put a content hash and the source files' modification times into their generated file names, so those files bust their own cache by name — and the long-caching option here is exactly the right policy for them: WP-Optimize's minified CSS/JS get the one-year headers and change URL whenever a source file changes, while Autoptimize serves its cache folder with its own equivalent one-year immutable policy, so the two never fight. Files the minifier leaves untouched keep this plugin's "ver" parameter — even when the minifier's "remove query strings" option is on (this plugin adds its version after them on purpose).
+
 = Does the automatic mode clear my page cache when a file changes? =
 
 No — and that's by design, not an oversight. In the automatic mode the version comes from the file's modification time, read at the moment a page is rendered; nothing "happens" on the server when you upload a changed file, so there is no event to clear the page cache on. Cached HTML keeps the old asset versions until the page cache expires or is cleared. After bigger changes, press "Update versions" — with the "Also clear the page cache" option enabled, that both updates the versions and clears the detected page cache in one click.
+
+= How do I fix the Lighthouse audit "Serve static assets with an efficient cache policy"? =
+
+Enable "Let browsers keep static files for a year" in the "Speed up" section of the settings page (available while CSS/JS versioning is on). The plugin serves static files with `Cache-Control: public, max-age=31536000, immutable`, which is exactly what the audit asks for — and it is safe here, because the plugin changes a file's URL whenever the file changes, so visitors never get stuck with an outdated copy. After enabling, the settings page tells you whether the headers were verified on your site.
+
+= Does the plugin edit my .htaccess? =
+
+Only if you enable the long-caching option, and only using WordPress's own API (the same one core uses for permalinks): a clearly marked block between `# BEGIN Prevent Browser Caching` and `# END Prevent Browser Caching`. The block is updated when you change related settings, and removed completely when you turn the option off, deactivate or delete the plugin. On multisite, on nginx, or if you define the `PBC_DISABLE_HTACCESS_WRITE` constant, the plugin never writes the file — it shows you the rules to add manually instead.
+
+= My caching plugin already adds browser-caching (expires) headers. Do I need both? =
+
+No — manage them in one place. If your caching plugin already serves long-lived headers for static files, you can leave the "Speed up" option here off: versioning keeps everything fresh either way. Nothing breaks if both end up enabled — the rules don't conflict, the later block simply wins — but a single source is cleaner. The advantage of managing them here is that the headers are tied to versioning (URLs change whenever files change, so a year-long cache can never show anyone an outdated file) and the settings page verifies that the headers actually work on your server.
+
+= The settings page says the caching headers are not showing up. What now? =
+
+The rules are in place, but your server did not apply them — most often the host's Apache lacks the `mod_headers`/`mod_expires` modules, or `.htaccess` overrides are disabled. Ask your host to enable them, or copy the rules shown on the settings page into the server configuration. Saving the settings re-runs the check. Until the headers work, nothing breaks — browsers simply keep caching the way they did before.
+
+= I excluded a file from versioning — will it still be cached for a year? =
+
+If it is a local CSS/JS file served from your site: yes, the long-caching rules work by file extension and cannot see your exclusion list. Exclusions are almost always external URLs (payment scripts, CDNs), which the rules never touch — but if you exclude a local file because it must not be cached long, either keep the long-caching option off or add a narrower rule for that file in your server configuration.
 
 = Why don't external files get a version by default? =
 
@@ -136,11 +170,14 @@ If you added `prevent_browser_caching( ... )` to your theme's functions.php, tha
 
 == Screenshots ==
 
-1. The settings page: choose what to keep fresh, when to update versions, and whether to also clear the detected page cache.
+1. The settings page: choose what to keep fresh, when to update versions (including automatically after plugin/theme/WordPress updates), whether to also clear the detected page cache, and whether browsers may keep static files for a year — with the header verification result right on the page.
 2. Upgrading from 2.x: your settings keep working as before, and one click enables the recommended setup (reversible).
 3. After a manual update the plugin reports what was refreshed and what happened to the page cache.
 
 == Upgrade Notice ==
+
+= 3.2.0 =
+Two optional new features: one-year browser caching for static files (safe thanks to versioning, with on-site verification) and automatic version refresh after plugin/theme/WordPress updates. Both are off by default — enable them on the settings page. All existing settings keep working unchanged.
 
 = 3.1.0 =
 "Update versions" can now also clear the page cache of a detected caching plugin (12 supported; opt-in checkbox, off by default) and reports what happened after every update. New: WP-CLI commands and Abilities for AI agents. All existing settings keep working unchanged.
@@ -149,6 +186,15 @@ If you added `prevent_browser_caching( ... )` to your theme's functions.php, tha
 Your saved settings keep working exactly as before. Open Settings → Prevent Browser Caching to enable the new recommended mode (versions from file modification time, external URLs untouched, image cache busting) with one click.
 
 == Changelog ==
+
+= 3.2.0 =
+* New: "Let browsers keep static files for a year" (opt-in, in the new "Speed up" settings section) — serves CSS, JS, fonts and images with long-lived `Cache-Control`/`Expires` headers. Safe by design: versioned URLs change whenever a file changes, so visitors still get updates immediately. Fixes the Lighthouse audit "Serve static assets with an efficient cache policy". On Apache/LiteSpeed the rules are written through WordPress's own .htaccess API and removed again when the option is turned off or the plugin is deactivated/deleted; on nginx and multisite the settings page shows a ready-to-copy snippet instead.
+* New: the plugin verifies the long-caching headers by fetching one of the site's own CSS files and shows the result on the settings page — so you know whether your server actually applied the rules (some hosts lack the needed Apache modules; the plugin tells you instead of silently assuming).
+* New: "Refresh versions automatically after plugin, theme or WordPress updates" (opt-in) — covers manual, bulk and automatic background updates, and clears the page cache when that option is on. Uses the least invalidation your mode allows: in the recommended automatic mode file versions already update by themselves, so only the page cache is cleared. Image versions are never touched by this feature.
+* New: a one-time "what's new" note after upgrading, shown only on the plugin's own settings page (dismissible; nothing is added anywhere else in wp-admin).
+* New for developers: the `pbc_cache_policy_rules` filter, the `pbc_after_auto_bump` action, and the `PBC_DISABLE_HTACCESS_WRITE` constant (force snippet-only mode, no file writes).
+* `wp pbc status` and the status ability now also report the cache-policy state (including the verification result) and the auto-refresh setting.
+* Fixed: a valueless "ver" query parameter no longer turns into "ver=.123" after a version update.
 
 = 3.1.0 =
 * New: "Update versions" can now also clear the page cache when one of the supported caching plugins is active — WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, WP-Optimize, Breeze, Cache Enabler, Hummingbird, SiteGround Optimizer, Swift Performance, Comet Cache. Fixes "I updated the versions, but visitors still got the old design from the page cache". Opt-in: a settings checkbox turns it on (off by default — another plugin's cache is only touched when you say so). Each plugin is purged through its own public API; every call is guarded, and the version update always completes even if a purge fails.
