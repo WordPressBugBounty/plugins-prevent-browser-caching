@@ -1,10 +1,10 @@
 === Prevent Browser Caching ===
 Contributors: kostyatereshchuk
-Tags: browser cache, clear cache, cache busting, versioning, cache
+Tags: browser cache, caching, wp cache, cache busting, speed
 Requires at least: 4.7
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 3.2.0
+Stable tag: 3.2.1
 Donate link: https://tutori.org/donate/
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -86,13 +86,13 @@ Legacy: earlier versions documented a `prevent_browser_caching()` function inste
 
 = Thank you =
 
-Many of the improvements in 3.0.0 started as reports and questions in the [support forum](https://wordpress.org/support/plugin/prevent-browser-caching/) — thank you to everyone who took the time to describe a problem or share an idea. If something doesn't work as expected on your site, please open a topic there: it genuinely helps make the plugin better for everyone.
+Many of the recent improvements started as reports and questions in the [support forum](https://wordpress.org/support/plugin/prevent-browser-caching/) — thank you to everyone who took the time to describe a problem or share an idea. If something doesn't work as expected on your site, please open a topic there: it genuinely helps make the plugin better for everyone.
 
 == Frequently Asked Questions ==
 
 = Does it affect site speed or SEO? =
 
-No. In the recommended automatic mode browser caching keeps working at full strength — repeat visitors load CSS/JS from their cache until a file really changes, so repeat views are as fast as ever (faster than the old 2.x default, which re-downloaded assets on every visit). The server cost is a few file-time lookups per page — negligible. The "ver" URL parameter is the same mechanism WordPress core uses, search engines are perfectly used to it, and cache headers are not a ranking signal — the plugin does not change your page content, markup or URLs seen by crawlers.
+It can only help. In the recommended automatic mode browser caching keeps working at full strength — repeat visitors load CSS/JS from their cache until a file really changes, so repeat views are as fast as ever (faster than the old 2.x default, which re-downloaded assets on every visit). And the opt-in "Speed up" option goes further: one-year caching headers for your static files — the exact fix for the Lighthouse "efficient cache policy" audit. The server cost is a few file-time lookups per page — negligible. The "ver" URL parameter is the same mechanism WordPress core uses, search engines are perfectly used to it, and the plugin does not change your page content, markup or URLs seen by crawlers.
 
 = Does it work together with page caching plugins? =
 
@@ -112,7 +112,7 @@ No — and that's by design, not an oversight. In the automatic mode the version
 
 = How do I fix the Lighthouse audit "Serve static assets with an efficient cache policy"? =
 
-Enable "Let browsers keep static files for a year" in the "Speed up" section of the settings page (available while CSS/JS versioning is on). The plugin serves static files with `Cache-Control: public, max-age=31536000, immutable`, which is exactly what the audit asks for — and it is safe here, because the plugin changes a file's URL whenever the file changes, so visitors never get stuck with an outdated copy. After enabling, the settings page tells you whether the headers were verified on your site.
+Enable "Let browsers keep static files for a year" in the "Speed up" section of the settings page (available while CSS/JS versioning is on). The plugin serves static files with `Cache-Control: public, max-age=31536000, immutable`, which is exactly what the audit asks for — and it is safe here, because the plugin changes a file's URL whenever the file changes, so visitors never get stuck with an outdated copy. After enabling, the settings page tells you whether the headers were verified on your site. The same option also resolves the older name of this recommendation — "Leverage browser caching" — still shown by GTmetrix and other testing tools.
 
 = Does the plugin edit my .htaccess? =
 
@@ -176,6 +176,9 @@ If you added `prevent_browser_caching( ... )` to your theme's functions.php, tha
 
 == Upgrade Notice ==
 
+= 3.2.1 =
+Fix for sites where a caching plugin is installed with its page caching switched off (e.g. WP-Optimize used only for database cleanup): it is no longer treated as an active page cache, and the "Pages (HTML)" option works again in that case.
+
 = 3.2.0 =
 Two optional new features: one-year browser caching for static files (safe thanks to versioning, with on-site verification) and automatic version refresh after plugin/theme/WordPress updates. Both are off by default — enable them on the settings page. All existing settings keep working unchanged.
 
@@ -186,6 +189,9 @@ Two optional new features: one-year browser caching for static files (safe thank
 Your saved settings keep working exactly as before. Open Settings → Prevent Browser Caching to enable the new recommended mode (versions from file modification time, external URLs untouched, image cache busting) with one click.
 
 == Changelog ==
+
+= 3.2.1 =
+* Fixed: a caching plugin that is installed but has its page caching switched off (for example WP-Optimize used only for database cleanup or image compression) is no longer treated as an active page cache. The "... is active, so page caching headers are left to it" note and the "Also clear the page cache" option now appear only when page caching is really enabled, and the "Pages (HTML)" option works in that situation instead of silently stepping aside. The check mirrors each supported plugin's own on/off state and safely falls back to the previous behavior when that state can't be read. Props @jcollier for the report.
 
 = 3.2.0 =
 * New: "Let browsers keep static files for a year" (opt-in, in the new "Speed up" settings section) — serves CSS, JS, fonts and images with long-lived `Cache-Control`/`Expires` headers. Safe by design: versioned URLs change whenever a file changes, so visitors still get updates immediately. Fixes the Lighthouse audit "Serve static assets with an efficient cache policy". On Apache/LiteSpeed the rules are written through WordPress's own .htaccess API and removed again when the option is turned off or the plugin is deactivated/deleted; on nginx and multisite the settings page shows a ready-to-copy snippet instead.

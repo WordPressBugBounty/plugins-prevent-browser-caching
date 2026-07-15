@@ -911,14 +911,25 @@ class Prevent_Browser_Caching
     }
 
     /**
-     * Detects an active page-cache plugin, so HTML freshness headers don't
-     * fight a server-side cache.
+     * Detects a page-cache plugin whose page caching is actually switched on,
+     * so HTML freshness headers don't fight a server-side cache.
+     *
+     * Presence alone is not enough: multi-purpose plugins (WP-Optimize,
+     * W3 Total Cache, ...) are often installed with their page cache disabled.
      *
      * @static
      * @return string Plugin name, or '' when none detected.
      */
     public static function get_active_page_cache_plugin()
     {
+        // The underlying plugin state cannot change mid-request; detection is
+        // called from hooks setup, the settings page, purge and status.
+        static $detected = null;
+
+        if ( null !== $detected ) {
+            return $detected;
+        }
+
         $known = array(
             'WP Rocket' => defined( 'WP_ROCKET_VERSION' ),
             'LiteSpeed Cache' => defined( 'LSCWP_V' ),
@@ -934,13 +945,124 @@ class Prevent_Browser_Caching
             'Comet Cache' => class_exists( 'comet_cache' ),
         );
 
+        $detected = '';
+
         foreach ( $known as $name => $active ) {
-            if ( $active ) {
-                return $name;
+            if ( $active && self::is_page_cache_feature_enabled( $name ) ) {
+                $detected = $name;
+                break;
             }
         }
 
-        return '';
+        return $detected;
+    }
+
+    /**
+     * Whether the detected plugin's page-cache feature is switched on.
+     *
+     * Each check mirrors the host plugin's own "should I serve cache" gate:
+     * the same option row and the same emptiness semantics (signals verified
+     * against wp.org trunk sources, see docs/v3.2.1-planning). Indeterminate
+     * state — a missing API, an unexpected value shape, an exception — fails
+     * open to true, so the worst case is the pre-3.2.1 presence behavior and
+     * PBC never fights a page cache that is actually serving.
+     *
+     * @static
+     * @param string $plugin Name as listed in get_active_page_cache_plugin().
+     * @return bool
+     */
+    private static function is_page_cache_feature_enabled( $plugin )
+    {
+        try {
+            switch ( $plugin ) {
+                case 'LiteSpeed Cache':
+                    // Option 'litespeed.conf.cache'; 2 means multisite
+                    // "use network setting" — treated as enabled (fail open).
+                    $value = get_option( 'litespeed.conf.cache', null );
+                    return null === $value || ! empty( $value );
+
+                case 'W3 Total Cache':
+                    if ( function_exists( 'w3tc_config' ) ) {
+                        $config = w3tc_config();
+
+                        if ( is_object( $config ) && method_exists( $config, 'get_boolean' ) ) {
+                            return (bool) $config->get_boolean( 'pgcache.enabled' );
+                        }
+                    }
+                    return true;
+
+                case 'WP Super Cache':
+                    // wp-cache-config.php is loaded by the plugin itself;
+                    // "Caching Off" writes $cache_enabled = false.
+                    if ( isset( $GLOBALS['cache_enabled'] ) ) {
+                        return (bool) $GLOBALS['cache_enabled'];
+                    }
+                    return true;
+
+                case 'WP Fastest Cache':
+                    // Serves cache only when wpFastestCacheStatus exists in
+                    // the settings JSON; no saved settings means no caching.
+                    $wpfc = json_decode( (string) get_option( 'WpFastestCache', '' ) );
+                    return is_object( $wpfc ) && isset( $wpfc->wpFastestCacheStatus );
+
+                case 'WP-Optimize':
+                    // Mirrors its advanced-cache.php gate; the default (and a
+                    // never-configured cache) is disabled.
+                    $config = is_multisite() ? get_site_option( 'wpo_cache_config', array() ) : get_option( 'wpo_cache_config', array() );
+                    return is_array( $config ) && ! empty( $config['enable_page_caching'] );
+
+                case 'Breeze':
+                    $settings = get_option( 'breeze_basic_settings', null );
+
+                    if ( ! is_array( $settings ) || ! array_key_exists( 'breeze-active', $settings ) ) {
+                        return true; // Breeze defaults to active.
+                    }
+                    return ! empty( $settings['breeze-active'] );
+
+                case 'Hummingbird':
+                    $settings = get_option( 'wphb_settings', null );
+
+                    if ( ! is_array( $settings ) || ! isset( $settings['page_cache']['enabled'] ) ) {
+                        return true;
+                    }
+                    return ! empty( $settings['page_cache']['enabled'] );
+
+                case 'SiteGround Optimizer':
+                    // Dynamic (NGINX) cache and file-based cache are separate
+                    // toggles; either one means a page cache is serving.
+                    $dynamic = get_option( 'siteground_optimizer_enable_cache', null );
+                    $file_cache = get_option( 'siteground_optimizer_file_caching', null );
+
+                    if ( null === $dynamic && null === $file_cache ) {
+                        return true;
+                    }
+                    return 1 === (int) $dynamic || 1 === (int) $file_cache;
+
+                case 'Swift Performance':
+                    $swift = get_option( 'swift_performance_options', null );
+
+                    if ( ! is_array( $swift ) || ! array_key_exists( 'enable-caching', $swift ) ) {
+                        return true;
+                    }
+                    return ! empty( $swift['enable-caching'] );
+
+                case 'Comet Cache':
+                    // Stored via update_site_option even on single site;
+                    // the default is disabled ('enable' => '0').
+                    $comet = get_site_option( 'comet_cache_options', null );
+
+                    if ( ! is_array( $comet ) ) {
+                        return true;
+                    }
+                    return ! empty( $comet['enable'] );
+            }
+        } catch ( \Throwable $e ) {
+            return true;
+        }
+
+        // WP Rocket, Cache Enabler: page caching is the plugin's core
+        // function — active means caching.
+        return true;
     }
 
     /**
