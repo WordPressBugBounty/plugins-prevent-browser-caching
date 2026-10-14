@@ -2,9 +2,9 @@
 Contributors: kostyatereshchuk
 Tags: browser cache, caching, wp cache, cache busting, speed
 Requires at least: 4.7
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.2
-Stable tag: 3.2.1
+Stable tag: 3.2.2
 Donate link: https://tutori.org/donate/
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -189,6 +189,9 @@ Two optional new features: one-year browser caching for static files (safe thank
 Your saved settings keep working exactly as before. Open Settings → Prevent Browser Caching to enable the new recommended mode (versions from file modification time, external URLs untouched, image cache busting) with one click.
 
 == Changelog ==
+
+= 3.2.2 =
+* Improved: AI agents now see the plugin's two Abilities directly. They are marked public for the Abilities API and the official WordPress MCP Adapter (`meta.public`, `meta.mcp.public`), carry the complete set of tool annotations, and are listed as first-class tools named `prevent-browser-caching-bump-versions` and `prevent-browser-caching-status` on the adapter's default MCP server, so an agent no longer has to call discover-abilities first (opt out with the `prevent_browser_caching_mcp_direct_tools` filter). No other changes.
 
 = 3.2.1 =
 * Fixed: a caching plugin that is installed but has its page caching switched off (for example WP-Optimize used only for database cleanup or image compression) is no longer treated as an active page cache. The "... is active, so page caching headers are left to it" note and the "Also clear the page cache" option now appear only when page caching is really enabled, and the "Pages (HTML)" option works in that situation instead of silently stepping aside. The check mirrors each supported plugin's own on/off state and safely falls back to the previous behavior when that state can't be read. Props @jcollier for the report.

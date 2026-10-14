@@ -7,8 +7,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Registers the plugin's operations as WordPress Abilities, so AI agents (via
- * the core MCP adapter), the REST API and other tools can discover and call
- * them. Thin wrappers over Prevent_Browser_Caching — no business logic here.
+ * the official MCP Adapter), the REST API and other tools can discover and
+ * call them. Thin wrappers over Prevent_Browser_Caching — no business logic
+ * here.
+ *
+ * Both abilities are marked public for agents (`meta.public` for WordPress
+ * 7.1+, `meta.mcp.public` for the MCP Adapter, whose WooCommerce-bundled copy
+ * reads only that key) and carry the complete annotation set, because MCP
+ * clients substitute spec defaults for a missing hint. The MCP Adapter's
+ * default server lists them as first-class tools through
+ * Prevent_Browser_Caching_MCP (3.2.2).
  *
  * Only loaded when wp_register_ability() exists (WordPress 6.9+); a no-op
  * otherwise.
@@ -51,9 +59,13 @@ class Prevent_Browser_Caching_Abilities
                 'permission_callback' => array( __CLASS__, 'can_manage' ),
                 'meta' => array(
                     'show_in_rest' => true,
+                    'public' => true,
+                    'mcp' => array( 'public' => true ),
                     'annotations' => array(
+                        'readonly' => false,
                         'destructive' => false,
                         'idempotent' => false,
+                        'openWorldHint' => false,
                     ),
                 ),
             )
@@ -88,8 +100,13 @@ class Prevent_Browser_Caching_Abilities
                 'permission_callback' => array( __CLASS__, 'can_manage' ),
                 'meta' => array(
                     'show_in_rest' => true,
+                    'public' => true,
+                    'mcp' => array( 'public' => true ),
                     'annotations' => array(
                         'readonly' => true,
+                        'destructive' => false,
+                        'idempotent' => true,
+                        'openWorldHint' => false,
                     ),
                 ),
             )

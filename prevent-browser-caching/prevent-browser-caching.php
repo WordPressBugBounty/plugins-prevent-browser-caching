@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Prevent Browser Caching
  * Description: Prevents browser cache problems: visitors always get the current version of your CSS, JS, images and pages, while caching keeps working.
- * Version: 3.2.1
+ * Version: 3.2.2
  * Requires at least: 4.7
  * Requires PHP: 7.2
  * Author: Kostya Tereshchuk
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'PREVENT_BROWSER_CACHING_VERSION' ) ) {
-    define( 'PREVENT_BROWSER_CACHING_VERSION', '3.2.1' );
+    define( 'PREVENT_BROWSER_CACHING_VERSION', '3.2.2' );
 }
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -41,6 +41,43 @@ if ( ! function_exists( 'prevent_browser_caching_register_abilities' ) ) {
         include_once dirname( __FILE__ ) . '/includes/class-prevent-browser-caching-abilities.php';
 
         Prevent_Browser_Caching_Abilities::register();
+    }
+}
+
+// MCP Adapter: list the abilities as first-class tools on its default server
+// (3.2.2). The adapter's defaults are remembered at the earliest priority and
+// merged at the latest; the class file is loaded only when an adapter fires
+// the filter. See includes/class-prevent-browser-caching-mcp.php.
+add_filter( 'mcp_adapter_default_server_config', 'prevent_browser_caching_mcp_remember_defaults', -10000 );
+add_filter( 'mcp_adapter_default_server_config', 'prevent_browser_caching_mcp_extend_config', 10000 );
+
+if ( ! function_exists( 'prevent_browser_caching_mcp_remember_defaults' ) ) {
+    /**
+     * Earliest callback on the MCP Adapter's default-server config filter.
+     *
+     * @param mixed $config
+     * @return mixed
+     */
+    function prevent_browser_caching_mcp_remember_defaults( $config )
+    {
+        include_once dirname( __FILE__ ) . '/includes/class-prevent-browser-caching-mcp.php';
+
+        return Prevent_Browser_Caching_MCP::remember_defaults( $config );
+    }
+}
+
+if ( ! function_exists( 'prevent_browser_caching_mcp_extend_config' ) ) {
+    /**
+     * Latest callback on the MCP Adapter's default-server config filter.
+     *
+     * @param mixed $config
+     * @return mixed
+     */
+    function prevent_browser_caching_mcp_extend_config( $config )
+    {
+        include_once dirname( __FILE__ ) . '/includes/class-prevent-browser-caching-mcp.php';
+
+        return Prevent_Browser_Caching_MCP::extend_config( $config );
     }
 }
 
